@@ -7,7 +7,9 @@ use std::sync::LazyLock;
 use rand::random;
 use ratatui::buffer::Buffer;
 #[cfg(feature = "crossterm")]
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::prelude::{Direction, Style, Text};
 use ratatui::style::{Color, Stylize};
@@ -122,6 +124,10 @@ impl ConfirmDialogState {
             yes_selected: true,
             yes_button,
             no_button: Some(no_button),
+            yes_button_area: None,
+            no_button_area: None,
+            dialog_area: None,
+            last_result: None,
         }
     }
 
@@ -220,14 +226,16 @@ impl ConfirmDialogState {
                 }
 
                 KeyCode::Char(chr) => {
-                    if chr == self.yes_button.control {
+                    // Match both lowercase and uppercase for button controls
+                    let chr_lower = chr.to_ascii_lowercase();
+                    if chr_lower == self.yes_button.control {
                         self.opened = false;
                         self.send_close_message(Some(true));
                         return true;
                     }
 
                     if let Some(no_button) = &self.no_button {
-                        if chr == no_button.control {
+                        if chr_lower == no_button.control {
                             self.opened = false;
                             self.send_close_message(Some(false));
                             return true;
@@ -272,9 +280,54 @@ impl ConfirmDialogState {
         }
     }
 
-    fn send_close_message(&self, result: Option<bool>) {
+    fn send_close_message(&mut self, result: Option<bool>) {
+        // Store the result for later retrieval
+        self.last_result = Some(result);
         if let Some(tx) = self.listener.as_ref() {
             let _ = tx.send((self.id, result));
+        }
+    }
+
+    #[cfg(feature = "crossterm")]
+    /// Handle mouse events for the dialog.
+    /// Returns true if the event was consumed.
+    pub fn handle_mouse(&mut self, event: &MouseEvent) -> bool {
+        use crate::helper::is_inside;
+
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let (x, y) = (event.column, event.row);
+
+                // Click on Yes button
+                if let Some(area) = self.yes_button_area {
+                    if is_inside(x, y, area) {
+                        self.opened = false;
+                        self.send_close_message(Some(true));
+                        return true;
+                    }
+                }
+
+                // Click on No button
+                if let Some(area) = self.no_button_area {
+                    if is_inside(x, y, area) {
+                        self.opened = false;
+                        self.send_close_message(Some(false));
+                        return true;
+                    }
+                }
+
+                // Click outside dialog (cancel if not modal)
+                if let Some(area) = self.dialog_area {
+                    if !is_inside(x, y, area) && !self.modal {
+                        self.opened = false;
+                        self.send_close_message(None);
+                        return true;
+                    }
+                }
+
+                self.modal
+            }
+            _ => false,
         }
     }
 }
@@ -340,7 +393,7 @@ impl ConfirmDialog {
         self
     }
 
-    fn button_paragraph(button: &ButtonLabel, style: Style) -> Paragraph {
+    fn button_paragraph(button: &ButtonLabel, style: Style) -> Paragraph<'_> {
         Paragraph::new(button.clone().with_style(Some(style)))
     }
 }
@@ -422,6 +475,9 @@ impl StatefulWidget for ConfirmDialog {
 
         let centered_area = super::helper::centered_rect_with_size(width, height, area);
 
+        // Store dialog area for mouse hit testing
+        state.dialog_area = Some(centered_area);
+
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints(&[Constraint::Min(1), Constraint::Max(2)])
@@ -445,6 +501,10 @@ impl StatefulWidget for ConfirmDialog {
                 ])
                 .split(main_layout[1]);
 
+            // Store button areas for mouse hit testing
+            state.yes_button_area = Some(buttons_layout[1]);
+            state.no_button_area = Some(buttons_layout[2]);
+
             yes_button.render(buttons_layout[1], buf);
             no_button.render(buttons_layout[2], buf);
         } else {
@@ -456,6 +516,10 @@ impl StatefulWidget for ConfirmDialog {
                     Constraint::Length(c),
                 ])
                 .split(main_layout[1]);
+
+            // Store button area for mouse hit testing
+            state.yes_button_area = Some(buttons_layout[1]);
+            state.no_button_area = None;
 
             yes_button.render(buttons_layout[1], buf);
         }

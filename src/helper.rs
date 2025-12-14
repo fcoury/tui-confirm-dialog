@@ -49,3 +49,15 @@ pub(crate) fn centered_rect_with_size(width: u16, height: u16, r: Rect) -> Rect 
 
     final_area
 }
+
+/// Check if a point (x, y) is inside a rectangle.
+/// Uses u32 arithmetic to prevent overflow with u16 coordinates.
+#[inline]
+pub fn is_inside(x: u16, y: u16, rect: Rect) -> bool {
+    let x32 = x as u32;
+    let y32 = y as u32;
+    x32 >= rect.x as u32
+        && x32 < (rect.x as u32 + rect.width as u32)
+        && y32 >= rect.y as u32
+        && y32 < (rect.y as u32 + rect.height as u32)
+}

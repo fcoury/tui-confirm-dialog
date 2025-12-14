@@ -1,8 +1,10 @@
 #![doc = include_str!("../README.md")]
+// Allow clippy warnings in vendored code
+#![allow(clippy::all)]
 
 use std::sync::mpsc::Sender;
 
-use ratatui::layout::Alignment;
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::Text;
 use ratatui::widgets::block::Title;
@@ -32,10 +34,19 @@ pub struct ConfirmDialogState {
     pub(crate) text: Text<'static>,
     pub(crate) modal: bool,
     pub(crate) opened: bool,
-    pub(crate) yes_selected: bool,
+    /// Whether the "Yes" button is currently selected.
+    pub yes_selected: bool,
     pub(crate) yes_button: ButtonLabel,
     pub(crate) no_button: Option<ButtonLabel>,
     pub(crate) listener: Option<Sender<Listener>>,
+    /// Area of the yes button (for mouse hit testing)
+    pub(crate) yes_button_area: Option<Rect>,
+    /// Area of the no button (for mouse hit testing)
+    pub(crate) no_button_area: Option<Rect>,
+    /// Area of the entire dialog (for mouse hit testing)
+    pub(crate) dialog_area: Option<Rect>,
+    /// The result of the last close action: Some(true) = yes, Some(false) = no, None = cancelled/dismissed
+    pub last_result: Option<Option<bool>>,
 }
 
 #[derive(Debug)]
